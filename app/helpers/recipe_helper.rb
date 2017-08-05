@@ -20,7 +20,7 @@ module RecipeHelper
 
   def tags(tags)
     tags.each_with_object("") do |tag, html|
-      html << "<span class=\"label label-info\">#{html_escape tag}</span> "
+      html << "<span class=\"label label-info\">#{h tag.name}</span> "
     end.html_safe
   end
 

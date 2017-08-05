@@ -4,20 +4,17 @@ class Recipe < ApplicationRecord
   belongs_to :created_by, class_name: "User"
   belongs_to :photo, optional: true
   has_many :ratings
+  has_and_belongs_to_many :tags
 
   after_save :update_search_vector
 
-  validates :name, presence: true, length: {minimum: 5}
+  validates :name, presence: true, length: { minimum: 5 }
   validates :ingredients, presence: true
   validates :created_by, presence: true
   validates :cookbook, presence: true
 
   def yumminess(user)
     ratings.where(user_id: user.id).pluck(:value).avg
-  end
-
-  def tags=(value)
-    super Array(value).reject(&:blank?).map(&:downcase).uniq
   end
 
   def rating_for(user, name=user.name)
@@ -36,7 +33,7 @@ class Recipe < ApplicationRecord
     update_all <<-SQL
       search_vector = setweight(to_tsvector('english', name), 'A') ||
                       setweight(to_tsvector('english', ingredients), 'A') ||
-                      setweight(to_tsvector('english', array_to_string(tags, ', ')), 'A') ||
+                      setweight(to_tsvector('english', coalesce(array_to_string((select array_agg(tags.name) from tags inner join recipes_tags ON recipes_tags.tag_id=tags.id AND recipes_tags.recipe_id=recipes.id), ','),'')), 'A') ||
                       setweight(to_tsvector('english', instructions), 'B')
     SQL
   end
@@ -45,21 +42,15 @@ class Recipe < ApplicationRecord
     order("(select avg(value) from ratings where recipe_id=recipes.id) desc")
   end
 
-  def tags=(tags)
-    super Array(tags)
-      .map { |tag| normalize_tag(tag) }
-      .uniq
-      .sort
+  def tags=(values)
+    tags = cookbook.tags.find_or_create_for(values)
+    self.tag_ids = tags.map(&:id)
   end
 
 protected
 
-  def normalize_tag(tag)
-    tag.strip.downcase.gsub(/[^a-z0-9]/, "-").gsub(/\-{2,}/, "-")
-  end
-
   def search_vector_should_change?
-    (changed & %w{tags name ingredients instructions}).any?
+    (changed & %w{name ingredients instructions}).any?
   end
 
   def update_search_vector
